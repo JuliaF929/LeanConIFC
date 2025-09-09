@@ -160,6 +160,104 @@ function App() {
     console.log(`Parsed ${Object.keys(entities).length} IFC entities`)
     console.log(`Found ${Object.keys(cartesianPoints).length} cartesian points`)
 
+    // Infer length unit scale (very rough). Default: 1 meter.
+    let lengthScale = 1
+    const unitMatch = content.match(/IFCSIUNIT\s*\([^)]*?\.LENGTHUNIT[^)]*?\.([A-Z]+)\./i)
+    if (unitMatch) {
+      const prefix = unitMatch[1].toUpperCase()
+      if (prefix === 'MILLI') lengthScale = 0.001
+      else if (prefix === 'CENTI') lengthScale = 0.01
+      else if (prefix === 'DECI') lengthScale = 0.1
+      else if (prefix === 'MICRO') lengthScale = 1e-6
+      else lengthScale = 1
+    }
+    console.log('Detected length scale:', lengthScale)
+
+    // Helpers to parse top-level params and resolve placements
+    const splitTopLevel = (s: string): string[] => {
+      const out: string[] = []
+      let depth = 0
+      let buf = ''
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i]
+        if (ch === '(') depth++
+        if (ch === ')') depth--
+        if (ch === ',' && depth === 0) { out.push(buf.trim()); buf = '' } else { buf += ch }
+      }
+      if (buf.trim().length) out.push(buf.trim())
+      return out
+    }
+
+    const entityMap: { [key: string]: { type: string; paramsArr: string[]; raw: string } } = {}
+    for (const [id, e] of Object.entries(entities)) {
+      entityMap[id] = { type: e.type, paramsArr: splitTopLevel(e.params), raw: e.params as string }
+    }
+
+    const parseVecFromPointId = (ref: string): THREE.Vector3 | null => {
+      const id = ref.replace('#', '')
+      const pt = entityMap[id]
+      if (!pt || pt.type !== 'IFCCARTESIANPOINT') return null
+      const match = pt.raw.match(/\(\(([^)]+)\)\)/) || pt.raw.match(/\(([^)]+)\)/)
+      if (!match) return null
+      const coords = match[1].split(',').map(v => parseFloat(v.trim()))
+      // Apply unit scaling and map IFC Z-up -> Three Y-up
+      const x = (coords[0] ?? 0) * lengthScale
+      const y = (coords[2] ?? 0) * lengthScale // IFC Z -> Three Y
+      const z = (coords[1] ?? 0) * lengthScale // IFC Y -> Three Z
+      return new THREE.Vector3(x, y, z)
+    }
+
+    const getAxis2Placement3D = (axisRef: string) => {
+      const id = axisRef.replace('#', '')
+      const e = entityMap[id]
+      if (!e || e.type !== 'IFCAXIS2PLACEMENT3D') return null
+      const locationRef = e.paramsArr[0]
+      const refDirRef = e.paramsArr[2] || null
+      const location = parseVecFromPointId(locationRef) || new THREE.Vector3()
+      let yaw = 0
+      if (refDirRef) {
+        const dId = refDirRef.replace('#', '')
+        const d = entityMap[dId]
+        if (d && d.type === 'IFCDIRECTION') {
+          const mm = d.raw.match(/\(([^)]+)\)/)
+          if (mm) {
+            const [dx, dy] = mm[1].split(',').map(v => parseFloat(v.trim()))
+            yaw = Math.atan2((dy ?? 0), (dx ?? 1))
+          }
+        }
+      }
+      return { location, yaw }
+    }
+
+    const resolveLocalPlacement = (lpRef: string) => {
+      let t = new THREE.Vector3()
+      let yaw = 0
+      let cursor: string | null = lpRef
+      let guard = 0
+      const rotateY = (v: THREE.Vector3, angle: number) => {
+        const c = Math.cos(angle), s = Math.sin(angle)
+        return new THREE.Vector3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z)
+      }
+      while (cursor && guard++ < 128) {
+        const id = cursor.replace('#', '')
+        const e = entityMap[id]
+        if (!e || e.type !== 'IFCLOCALPLACEMENT') break
+        const placementRelTo = e.paramsArr[0] && e.paramsArr[0] !== '$' ? e.paramsArr[0] : null
+        const relPlacement = e.paramsArr[1]
+        if (relPlacement?.startsWith('#')) {
+          const a3 = getAxis2Placement3D(relPlacement)
+          if (a3) {
+            // Apply current parent rotation to local translation before accumulating
+            const rotated = rotateY(a3.location, yaw)
+            t.add(rotated)
+            yaw += a3.yaw
+          }
+        }
+        cursor = placementRelTo
+      }
+      return { position: t, yaw }
+    }
+
     // Log some entity types to debug
     const entityTypes = Object.values(entities).reduce((acc: {[key: string]: number}, entity: any) => {
       acc[entity.type] = (acc[entity.type] || 0) + 1
@@ -168,9 +266,9 @@ function App() {
     console.log('Entity types found:', entityTypes)
 
     // Extract building elements with geometry
-    const buildingElements = Object.values(entities).filter(entity => 
-      ['IFCWALL', 'IFCSLAB', 'IFCBEAM', 'IFCCOLUMN', 'IFCDOOR', 'IFCWINDOW', 'IFCSTAIR'].includes(entity.type)
-    )
+    const buildingElements = Object.entries(entityMap)
+      .filter(([_, e]) => ['IFCWALL', 'IFCSLAB', 'IFCBEAM', 'IFCCOLUMN', 'IFCDOOR', 'IFCWINDOW', 'IFCSTAIR'].includes(e.type))
+      .map(([id, e]) => ({ id, ...e }))
 
     console.log(`Found ${buildingElements.length} building elements`)
     if (buildingElements.length > 0) {
@@ -215,27 +313,32 @@ function App() {
           material = new THREE.MeshLambertMaterial({ color: 0xff0000 })
       }
 
-      // Position ALL objects in a tight grid near the red test cube
-      const gridSize = Math.ceil(Math.sqrt(buildingElements.length))
-      const spacing = 3
-      const row = Math.floor(index / gridSize)
-      const col = index % gridSize
-      
-      position.set(
-        col * spacing - 5,  // Start near origin, spread right
-        1,                  // Fixed height above ground
-        row * spacing - 5   // Start near origin, spread back
-      )
+      // Try resolve real local placement
+      let localPlacementRef: string | null = null
+      for (const p of element.paramsArr) {
+        const m = p.match(/^#(\d+)$/)
+        if (m) {
+          const ref = entityMap[m[1]]
+          if (ref && ref.type === 'IFCLOCALPLACEMENT') { localPlacementRef = '#' + m[1]; break }
+        }
+      }
 
       const mesh = new THREE.Mesh(geometry, material)
-      mesh.position.copy(position)
+      if (localPlacementRef) {
+        const tr = resolveLocalPlacement(localPlacementRef)
+        mesh.position.copy(tr.position)
+        mesh.rotation.set(0, tr.yaw, 0)
+      } else {
+        // Fallback grid
+        const gridSize = Math.ceil(Math.sqrt(buildingElements.length))
+        const spacing = 3
+        const row = Math.floor(index / gridSize)
+        const col = index % gridSize
+        mesh.position.set(col * spacing - 5, 1, row * spacing - 5)
+      }
       mesh.userData = { ifcType: element.type, ifcId: element.id }
       group.add(mesh)
-      
-      // Debug: log first few mesh positions
-      if (index < 3) {
-        console.log(`Mesh ${index} (${element.type}):`, mesh.position)
-      }
+      if (index < 3) console.log(`Mesh ${index} (${element.type}) at`, mesh.position)
     })
 
     // If we have specific coordinate data, try to use it
