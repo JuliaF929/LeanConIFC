@@ -23,7 +23,7 @@ function App() {
     const container = mountRef.current!
     const width = container.clientWidth || 800
     const height = container.clientHeight || 600
-    
+
     console.log('Container dimensions:', width, 'x', height)
     console.log('Container element:', container)
 
@@ -65,9 +65,23 @@ function App() {
     controlsModule.then(({ OrbitControls }: any) => {
       const controls = new OrbitControls(camera, renderer.domElement)
       controls.target.set(0, 5, 0)
+
+      // ✅ pan support
+      controls.enablePan = true
+      controls.screenSpacePanning = true
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      }
+      controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN,
+      }
+
       controls.update()
       console.log('OrbitControls initialized')
-      
+
       const animate = () => {
         requestAnimationFrame(animate)
         renderer.render(scene, camera)
@@ -103,7 +117,7 @@ function App() {
   const parseIfcFile = async (file: File | string): Promise<THREE.Group> => {
     // Real IFC parser that extracts actual geometry from IFC files
     let content: string
-    
+
     if (typeof file === 'string') {
       const response = await fetch(file)
       content = await response.text()
@@ -121,19 +135,19 @@ function App() {
     
     const entities: { [key: string]: any } = {}
     const cartesianPoints: { [key: string]: THREE.Vector3 } = {}
-    
+
     // Parse all entities first - improved regex to handle IFC format better
     for (const line of lines) {
       // Remove any whitespace and check if it's an entity line
       const trimmedLine = line.trim()
       if (!trimmedLine.startsWith('#') || !trimmedLine.includes('=')) continue
-      
+
       // More flexible regex for IFC entity parsing
       const match = trimmedLine.match(/^#(\d+)\s*=\s*(\w+)\s*\((.*)\)\s*;?\s*$/)
       if (match) {
         const [, id, type, params] = match
         entities[id] = { type, params: params.trim(), id }
-        
+
         // Parse Cartesian points with more flexible matching
         if (type === 'IFCCARTESIANPOINT') {
           // Handle both ((x,y,z)) and (x,y,z) formats
@@ -142,9 +156,9 @@ function App() {
             const coords = coordMatch[1].split(',').map(s => parseFloat(s.trim()))
             if (coords.length >= 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
               cartesianPoints[id] = new THREE.Vector3(
-                coords[0] / 1000, // Convert mm to meters
-                coords[2] || 0,   // Z coordinate (up)
-                coords[1] / 1000  // Y coordinate (forward)
+                coords[0] / 1000,
+                coords[2] || 0,
+                coords[1] / 1000
               )
             }
           }
@@ -202,8 +216,8 @@ function App() {
       const coords = match[1].split(',').map(v => parseFloat(v.trim()))
       // Apply unit scaling and map IFC Z-up -> Three Y-up
       const x = (coords[0] ?? 0) * lengthScale
-      const y = (coords[2] ?? 0) * lengthScale // IFC Z -> Three Y
-      const z = (coords[1] ?? 0) * lengthScale // IFC Y -> Three Z
+      const y = (coords[2] ?? 0) * lengthScale
+      const z = (coords[1] ?? 0) * lengthScale
       return new THREE.Vector3(x, y, z)
     }
 
@@ -346,13 +360,13 @@ function App() {
       // Create a point cloud to show the actual coordinate positions
       const pointsGeometry = new THREE.BufferGeometry()
       const positions = new Float32Array(Object.keys(cartesianPoints).length * 3)
-      
+
       Object.values(cartesianPoints).forEach((point, i) => {
         positions[i * 3] = point.x
         positions[i * 3 + 1] = point.y
         positions[i * 3 + 2] = point.z
       })
-      
+
       pointsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       const pointsMaterial = new THREE.PointsMaterial({ color: 0xff0000, size: 0.1 })
       const points = new THREE.Points(pointsGeometry, pointsMaterial)
@@ -376,7 +390,7 @@ function App() {
         sceneRef.current.remove(modelRef.current)
         modelRef.current = null
       }
-      
+
       // Don't remove the original test cube and grid - keep them for reference
 
       // Parse IFC and create geometry
@@ -447,7 +461,7 @@ function App() {
   const onPickFile = (evt: React.ChangeEvent<HTMLInputElement>) => {
     const file = evt.target.files?.[0]
     if (!file) return
-    
+
     const parseFileDirectly = async () => {
       try {
         setError(null)
@@ -527,7 +541,7 @@ function App() {
         {SAMPLES.map((s) => (
           <button key={s.path} onClick={() => loadIfcUrl(s.path)} disabled={loading !== null}>
             Load {s.label}
-        </button>
+          </button>
         ))}
         {loading && <span>Loading: {loading}</span>}
         {error && <span style={{ color: 'red' }}>{error}</span>}
