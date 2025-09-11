@@ -68,19 +68,57 @@ function geometryForType(t: string): THREE.BufferGeometry {
 
 // ----------------- Component -----------------
 function App() {
+  // Layout states for splitter
+  const [topHeightPct, setTopHeightPct] = useState(60) // % height for top pane
+  const isDraggingRef = useRef(false)
+
+  // Three.js refs
   const mountRef = useRef<HTMLDivElement | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const modelRef = useRef<THREE.Object3D | null>(null)
 
+  // Data/UI
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [elements, setElements] = useState<ElementRec[]>([])
 
+  // ----------------- Splitter handlers -----------------
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current) return
+      const app = document.getElementById('app-root')
+      if (!app) return
+      const rect = app.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      const pct = Math.min(85, Math.max(15, (y / rect.height) * 100))
+      setTopHeightPct(pct)
+      // also update renderer size for top pane
+      const container = mountRef.current
+      if (container && rendererRef.current && cameraRef.current) {
+        const w = container.clientWidth
+        const h = container.clientHeight
+        cameraRef.current.aspect = w / h
+        cameraRef.current.updateProjectionMatrix()
+        rendererRef.current.setSize(w, h)
+      }
+    }
+    const onMouseUp = () => { isDraggingRef.current = false }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
+
+  // ----------------- Three.js scene setup -----------------
   useEffect(() => {
     const container = mountRef.current!
     const width = container.clientWidth || 800
-    const height = container.clientHeight || 600
+    const height = container.clientHeight || 400
 
     // Scene
     const scene = new THREE.Scene()
@@ -121,7 +159,7 @@ function App() {
       animate()
     })
 
-    // Resize
+    // Resize (on window; splitter adjusts explicitly elsewhere)
     const handleResize = () => {
       const w = container.clientWidth
       const h = container.clientHeight
@@ -146,6 +184,8 @@ function App() {
         }
 
         const { elements } = await fetchElements()
+        setElements(elements || [])
+
         if (!elements || elements.length === 0) {
           setError('No elements returned from backend')
           setLoading(null)
@@ -172,9 +212,8 @@ function App() {
           return g
         }
 
-        // Create meshes
+        // Create meshes (placeholder geometry)
         for (const el of elements) {
-          // Need at least x & y & z_rel to place
           if (el.x == null || el.y == null || el.z_relative_to_level == null) continue
 
           const g = ensureLevelGroup(el.level_name, el.level_elevation ?? 0)
@@ -184,11 +223,10 @@ function App() {
           const mesh = new THREE.Mesh(geom, mat)
 
           // IFC (X, Y, Z-up) -> Three (X, Z, Y-up)
-          // Put element inside its level group: local y = z_relative_to_level
           mesh.position.set(
-            el.x * scale,                      // X -> X
-            (el.z_relative_to_level ?? 0) * scale, // Z_ifc(rel) -> Y_three
-            el.y * scale                       // Y_ifc -> Z_three
+            el.x * scale,                              // X -> X
+            (el.z_relative_to_level ?? 0) * scale,     // Z_ifc(rel) -> Y_three
+            el.y * scale                               // Y_ifc -> Z_three
           )
           mesh.userData = {
             type: el.type,
@@ -233,13 +271,122 @@ function App() {
     }
   }, [])
 
+  // ----------------- Table handlers -----------------
+  const handleColumnHeaderClick = (columnKey: string) => {
+    // Print something on header click
+    console.log(`Column header clicked: ${columnKey}`)
+    alert(`Column header clicked: ${columnKey}`)
+  }
+
+  const handleRowHeaderClick = (rowKey: string) => {
+    console.log(`Row header clicked: ${rowKey}`)
+    alert(`Row header clicked: ${rowKey}`)
+  }
+
+  // Compose table data (keep it simple for now)
+  const columns: { key: keyof ElementRec | 'index'; label: string }[] = [
+    { key: 'index',               label: '#' },
+    { key: 'type',                label: 'Type' },
+    { key: 'level_name',          label: 'Level' },
+    { key: 'x',                   label: 'X' },
+    { key: 'y',                   label: 'Y' },
+    { key: 'z_relative_to_level', label: 'Z (relative)' },
+    { key: 'real_world_z',        label: 'Z (world)' },
+    { key: 'unit',                label: 'Unit' },
+  ]
+
   return (
-    <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column' }}>
+    <div id="app-root" style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column' }}>
+      {/* Top status bar */}
       <div style={{ padding: 8, display: 'flex', gap: 8, alignItems: 'center', background: '#f0f0f0' }}>
         {loading && <span>{loading}</span>}
         {error && <span style={{ color: 'red' }}>{error}</span>}
       </div>
-      <div ref={mountRef} style={{ flex: 1 }} />
+
+      {/* Split panes */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* Top (3D) */}
+        <div
+          style={{
+            height: `${topHeightPct}%`,
+            minHeight: 100,
+            borderBottom: '1px solid #ddd',
+            overflow: 'hidden',
+            position: 'relative'
+          }}
+        >
+          <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+        </div>
+
+        {/* Separator */}
+        <div
+          onMouseDown={() => (isDraggingRef.current = true)}
+          style={{
+            height: 6,
+            cursor: 'row-resize',
+            background: 'linear-gradient(#eaeaea, #d5d5d5)',
+            borderTop: '1px solid #cfcfcf',
+            borderBottom: '1px solid #cfcfcf',
+            userSelect: 'none'
+          }}
+          title="Drag to resize"
+        />
+
+        {/* Bottom (Table) */}
+        <div style={{ flex: 1, minHeight: 100, overflow: 'auto', padding: 8, background: '#fff' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {columns.map(col => (
+                  <th
+                    key={col.key as string}
+                    onClick={() => handleColumnHeaderClick(col.label)}
+                    style={{
+                      position: 'sticky',
+                      top: 0,
+                      background: '#fafafa',
+                      textAlign: 'left',
+                      padding: '6px 8px',
+                      borderBottom: '1px solid #ddd',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {elements.map((el, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  {/* Row header (first column) */}
+                  <th
+                    scope="row"
+                    onClick={() => handleRowHeaderClick(`row ${idx + 1}`)}
+                    style={{
+                      background: '#fcfcfc',
+                      padding: '6px 8px',
+                      borderRight: '1px solid #f5f5f5',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    {idx + 1}
+                  </th>
+
+                  <td style={{ padding: '6px 8px' }}>{el.type}</td>
+                  <td style={{ padding: '6px 8px' }}>{el.level_name ?? ''}</td>
+                  <td style={{ padding: '6px 8px' }}>{el.x ?? ''}</td>
+                  <td style={{ padding: '6px 8px' }}>{el.y ?? ''}</td>
+                  <td style={{ padding: '6px 8px' }}>{el.z_relative_to_level ?? ''}</td>
+                  <td style={{ padding: '6px 8px' }}>{el.real_world_z ?? ''}</td>
+                  <td style={{ padding: '6px 8px' }}>{el.unit ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

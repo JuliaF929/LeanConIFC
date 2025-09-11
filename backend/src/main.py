@@ -18,7 +18,7 @@ app.add_middleware(
 )
 
 # 🔧 Hardcoded path to IFC file
-IFC_FILE_PATH = "C:/base_structure.ifc"
+IFC_FILE_PATH = "C:/Simple example_with_castunits_fixed_new.ifc"
 
 # Load model once at startup
 if os.path.exists(IFC_FILE_PATH):
