@@ -10,6 +10,12 @@ const SAMPLES: Sample[] = [
   { label: 'Simple example', path: '/Simple example_with_castunits_fixed_new.ifc' },
 ]
 
+async function fetchElements() {
+  const res = await fetch("http://localhost:8000/api/elements");
+  if (!res.ok) throw new Error("Failed to load elements");
+  return res.json();
+}
+
 function App() {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
@@ -53,13 +59,50 @@ function App() {
     scene.add(grid)
 
     // Add a test cube to verify Three.js is working
-    const testCube = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 2, 2),
-      new THREE.MeshLambertMaterial({ color: 0xff0000 })
+    //const testCube = new THREE.Mesh(
+      //new THREE.BoxGeometry(10, 10, 10),
+      //new THREE.MeshLambertMaterial({ color: 0xfff000 })
+    //)
+    //testCube.position.set(0, 1, 0)
+    //scene.add(testCube)
+    //console.log('Added red test cube at origin')
+
+    fetchElements();
+//julia
+
+    // Create two dummy level groups
+    const level0Group = new THREE.Group()
+    level0Group.name = "Level 0"
+    level0Group.position.y = 0  // Elevation of level 0
+    scene.add(level0Group)
+
+    const level1Group = new THREE.Group()
+    level1Group.name = "Level 1"
+    level1Group.position.y = 3  // Elevation of level 1
+    scene.add(level1Group)
+
+    // Add dummy visualization for the levels
+    //const grid0 = new THREE.GridHelper(20, 20, 0x0000ff, 0x0000ff)
+    level0Group.add(grid)
+
+    //const grid1 = new THREE.GridHelper(20, 20, 0x00ff00, 0x00ff00)
+    level1Group.add(grid)
+
+    const testWall = new THREE.Mesh(
+                                    new THREE.BoxGeometry(4, 3, 0.3),
+                                    new THREE.MeshLambertMaterial({ color: 0xfff000 })
     )
-    testCube.position.set(0, 1, 0)
-    scene.add(testCube)
-    console.log('Added red test cube at origin')
+    //testWall.position.set(0, 1, 0)
+
+    // Associate testWall with Level 1
+    testWall.position.set(2, 0.5, 2)   // local to the level group
+    level1Group.add(testWall)
+
+    scene.add(testWall)
+
+    
+
+//julia
 
     const controlsModule = import('three/examples/jsm/controls/OrbitControls.js')
     controlsModule.then(({ OrbitControls }: any) => {
@@ -89,7 +132,7 @@ function App() {
       animate()
       console.log('Animation loop started')
       
-      // Force an immediate render to test
+      // Force an immediate render
       renderer.render(scene, camera)
       console.log('First render completed')
     })
@@ -385,7 +428,7 @@ function App() {
 
       console.log('Loading IFC from:', url)
 
-      // Remove previous model but keep test objects
+      // Remove previous model 
       if (modelRef.current) {
         sceneRef.current.remove(modelRef.current)
         modelRef.current = null
@@ -399,15 +442,7 @@ function App() {
       console.log('IFC parsing completed, model children:', model.children.length)
       
       if (model.children.length === 0) {
-        console.warn('No geometry created from IFC file!')
-        // Create a test cube to show the viewer is working
-        const testGeometry = new THREE.BoxGeometry(2, 2, 2)
-        const testMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 })
-        const testCube = new THREE.Mesh(testGeometry, testMaterial)
-        testCube.position.set(0, 1, 0)
-        model.add(testCube)
-        console.log('Added test cube since no IFC geometry was found')
-      }
+        console.warn('No geometry created from IFC file!') }
       
       // Add model to scene
       modelRef.current = model
@@ -415,15 +450,15 @@ function App() {
       console.log('Model added to scene')
       
       // Also keep the test cube visible for reference
-      if (sceneRef.current) {
-        const testCube = new THREE.Mesh(
-          new THREE.BoxGeometry(2, 2, 2),
-          new THREE.MeshLambertMaterial({ color: 0x00ff00 })
-        )
-        testCube.position.set(0, 1, 0)
-        sceneRef.current.add(testCube)
-        console.log('Added green reference cube at origin')
-      }
+      //if (sceneRef.current) {
+        //const testCube = new THREE.Mesh(
+         //new THREE.BoxGeometry(2, 2, 2),
+         // new THREE.MeshLambertMaterial({ color: 0x00ff00 })
+        //)
+        //testCube.position.set(0, 1, 0)
+        //sceneRef.current.add(testCube)
+        //console.log('Added green reference cube at origin')
+      //}
 
       // Calculate bounding box and fit camera
       const box = new THREE.Box3().setFromObject(model)
@@ -458,86 +493,9 @@ function App() {
     }
   }
 
-  const onPickFile = (evt: React.ChangeEvent<HTMLInputElement>) => {
-    const file = evt.target.files?.[0]
-    if (!file) return
-
-    const parseFileDirectly = async () => {
-      try {
-        setError(null)
-        setLoading(file.name)
-        if (!sceneRef.current) return
-
-        console.log('Parsing uploaded IFC file:', file.name)
-
-        // Remove previous model
-        if (modelRef.current) {
-          sceneRef.current.remove(modelRef.current)
-          modelRef.current = null
-        }
-
-        // Parse IFC file directly
-        console.log('Starting IFC parsing for uploaded file...')
-        const model = await parseIfcFile(file)
-        console.log('IFC parsing completed, model children:', model.children.length)
-        
-        // Add model to scene
-        modelRef.current = model
-        sceneRef.current.add(model)
-        console.log('Model added to scene for uploaded file')
-        
-        // Also add green reference cube at origin
-        if (sceneRef.current) {
-          const testCube = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 2, 2),
-            new THREE.MeshLambertMaterial({ color: 0x00ff00 })
-          )
-          testCube.position.set(0, 1, 0)
-          sceneRef.current.add(testCube)
-          console.log('Added green reference cube at origin for uploaded file')
-        }
-
-        // Fit camera
-        const box = new THREE.Box3().setFromObject(model)
-        const center = box.getCenter(new THREE.Vector3())
-        const size = box.getSize(new THREE.Vector3())
-
-        console.log('Model center for uploaded file:', center)
-        console.log('Model size for uploaded file:', size)
-        console.log('Building elements created for uploaded file:', model.children.length)
-
-        // Don't move camera - keep it where it was for uploaded files too
-        console.log('Camera position unchanged for uploaded file:', cameraRef.current?.position)
-        console.log('Model was created with', model.children.length, 'objects')
-        console.log('Model bounding box - center:', center, 'size:', size)
-        
-        // Log some sample mesh positions to debug
-        if (model.children.length > 0) {
-          console.log('First 3 mesh positions for uploaded file:')
-          for (let i = 0; i < Math.min(3, model.children.length); i++) {
-            const mesh = model.children[i] as THREE.Mesh
-            console.log(`  ${i}: ${mesh.userData?.ifcType || 'unknown'} at`, mesh.position)
-          }
-        }
-
-        console.log('IFC file successfully parsed!')
-
-      } catch (e: any) {
-        console.error('File parsing error:', e)
-        setError(e?.message || 'Failed to parse IFC file')
-      } finally {
-        setLoading(null)
-      }
-    }
-
-    parseFileDirectly()
-  }
-
   return (
     <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: 8, display: 'flex', gap: 8, alignItems: 'center', background: '#f0f0f0' }}>
-        <strong>IFC Viewer (Pure Three.js)</strong>
-        <input type="file" accept=".ifc" onChange={onPickFile} />
         {SAMPLES.map((s) => (
           <button key={s.path} onClick={() => loadIfcUrl(s.path)} disabled={loading !== null}>
             Load {s.label}

@@ -1,0 +1,32 @@
+# Logs
+ifc-viewer/logs
+ifc-viewer/*.log
+ifc-viewer/npm-debug.log*
+ifc-viewer/yarn-debug.log*
+ifc-viewer/yarn-error.log*
+ifc-viewer/pnpm-debug.log*
+ifc-viewer/lerna-debug.log*
+
+ifc-viewer/node_modules
+ifc-viewer/dist
+ifc-viewer/dist-ssr
+ifc-viewer/*.local
+
+# Editor directories and files
+ifc-viewer/.vscode/*
+!ifc-viewer/.vscode/extensions.json
+ifc-viewer/.idea
+ifc-viewer/.DS_Store
+ifc-viewer/*.suo
+ifc-viewer/*.ntvs*
+ifc-viewer/*.njsproj
+ifc-viewer/*.sln
+ifc-viewer/*.sw?
+
+
+# Python cache
+backend/__pycache__/
+backend/src/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
