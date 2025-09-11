@@ -3,8 +3,19 @@ from fastapi.responses import JSONResponse
 import os
 import ifcopenshell
 from ifcopenshell.util import element as ifc_element
+from collections import defaultdict
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# Allow React dev server origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 🔧 Hardcoded path to IFC file
 IFC_FILE_PATH = "C:/base_structure.ifc"
@@ -64,6 +75,7 @@ def get_elements():
 
     unit = _get_unit()
     elements = []
+    type_summary = defaultdict(int)
 
     for element in model.by_type("IfcBuildingElement"):
         loc = _get_element_location(element)
@@ -76,6 +88,9 @@ def get_elements():
             x, y, z_rel = loc["x"], loc["y"], loc["z"]
             real_world_z = level_elevation + z_rel
 
+        elem_type = element.is_a()
+        type_summary[elem_type] += 1
+
         data = {
             "x": x,
             "y": y,
@@ -83,14 +98,26 @@ def get_elements():
             "real_world_z": real_world_z,
             "level_name": level_name,
             "level_elevation": level_elevation,
-            "type": element.is_a(),
+            "type": elem_type,
             "unit": unit,
         }
 
         print(data)  # shows in console
         elements.append(data)
 
-    return {"elements": elements}
+    # Build grouped summary
+    groups = []
+    for elem_type, count in type_summary.items():
+        groups.append({
+            "type": elem_type,
+            "unit": unit,
+            "count": count,
+        })
+
+    return {
+        "elements": elements,
+        "summary": groups
+    }
 
 
 # Run with:
