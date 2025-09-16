@@ -17,8 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔧 Hardcoded path to IFC file
-IFC_FILE_PATH = "C:/Simple example_with_castunits_fixed_new.ifc"
+# Hardcoded path to IFC file
+IFC_FILE_PATH = "C:/base_structure.ifc"
 
 # Load model once at startup
 if os.path.exists(IFC_FILE_PATH):
@@ -28,9 +28,6 @@ else:
 
 
 def _get_element_location(element):
-    """
-    Return local placement coordinates (relative to storey).
-    """
     if hasattr(element, "ObjectPlacement") and element.ObjectPlacement:
         try:
             placement = element.ObjectPlacement.RelativePlacement
@@ -42,9 +39,6 @@ def _get_element_location(element):
 
 
 def _get_element_level(element):
-    """
-    Return storey name and elevation (flattened).
-    """
     storey = ifc_element.get_container(element)
     if storey and storey.is_a("IfcBuildingStorey"):
         return (
@@ -55,14 +49,11 @@ def _get_element_level(element):
 
 
 def _get_unit():
-    """
-    Return the length unit from the IFC header.
-    """
     try:
         units = model.by_type("IfcUnitAssignment")[0].Units
         for u in units:
             if u.UnitType == "LENGTHUNIT":
-                return f"{u.Prefix or ''}{u.Name}"  # e.g. "MilliMETRE" or "METRE"
+                return f"{u.Prefix or ''}{u.Name}"
     except Exception:
         return None
     return None
@@ -107,7 +98,12 @@ def get_elements():
 
     # Count distinct levels
     levels = model.by_type("IfcBuildingStorey")
-    num_levels = len(levels)
+    levels_sorted = sorted(
+        [(lv.Name, float(lv.Elevation) if lv.Elevation else 0.0) for lv in levels],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    level_names = [name for name, _ in levels_sorted]
 
     # Build grouped summary
     groups = []
@@ -121,7 +117,7 @@ def get_elements():
     return {
         "elements": elements,
         "summary": groups,
-        "num_levels": num_levels
+        "levels": level_names
     }
 
 

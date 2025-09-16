@@ -106,6 +106,7 @@ function App() {
   const [elements, setElements] = useState<ElementRec[]>([])
   const [summary, setSummary] = useState<SummaryItem[]>([])
   const [numLevels, setNumLevels] = useState<number>(0) // number of levels from backend
+  const [levelNames, setLevelNames] = useState<string[]>([]) // <-- added (derived from elements)
 
   // ----------------- Splitter handlers -----------------
   useEffect(() => {
@@ -212,6 +213,19 @@ function App() {
         setSummary(summaryData)
         setNumLevels(num_levels || 0)
 
+        // derive real level names from elements (sorted by elevation desc)
+        const levelMap = new Map<string, number>()
+        for (const el of elements || []) {
+          if (el.level_name != null) {
+            const elev = typeof el.level_elevation === 'number' ? el.level_elevation : 0
+            if (!levelMap.has(el.level_name)) levelMap.set(el.level_name, elev)
+          }
+        }
+        const names = Array.from(levelMap.entries())
+          .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+          .map(([n]) => n)
+        setLevelNames(names)
+
         if (!elements || elements.length === 0) {
           setError('No elements returned from backend')
           setLoading(null)
@@ -309,6 +323,18 @@ function App() {
     alert(`Row header clicked: ${rowKey}`)
   }
 
+  // Compose table data (keep it simple for now)
+  const columns: { key: keyof ElementRec | 'index'; label: string }[] = [
+    { key: 'index',               label: '#' },
+    { key: 'type',                label: 'Type' },
+    { key: 'level_name',          label: 'Level' },
+    { key: 'x',                   label: 'X' },
+    { key: 'y',                   label: 'Y' },
+    { key: 'z_relative_to_level', label: 'Z (relative)' },
+    { key: 'real_world_z',        label: 'Z (world)' },
+    { key: 'unit',                label: 'Unit' },
+  ]
+
   return (
     <div id="app-root" style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column' }}>
       {/* Top status bar */}
@@ -373,10 +399,10 @@ function App() {
                     {col.label}
                   </th>
                 ))}
-                {Array.from({ length: numLevels }).map((_, idx) => (
+                {levelNames.map((lvl, idx) => (
                   <th
                     key={`lvl-${idx}`}
-                    onClick={() => handleColumnHeaderClick(`Level ${idx + 1}`)}
+                    onClick={() => handleColumnHeaderClick(lvl)}
                     style={{
                       position: 'sticky',
                       top: 0,
@@ -388,7 +414,7 @@ function App() {
                       width: 'calc(100%/12)'
                     }}
                   >
-                    {`Level ${idx + 1}`}
+                    {lvl}
                   </th>
                 ))}
               </tr>
@@ -396,6 +422,7 @@ function App() {
             <tbody>
               {summary.map((row) => (
                 <tr key={row.type} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  {/* Row header = first column (Element type) */}
                   <th
                     scope="row"
                     onClick={() => handleRowHeaderClick(row.type)}
@@ -413,13 +440,13 @@ function App() {
                   </th>
                   <td style={{ padding: '4px 6px', width: 'calc(100%/12)' }}>{row.unit ?? ''}</td>
                   <td style={{ padding: '4px 6px', width: 'calc(100%/12)' }}>{row.count}</td>
-                  {Array.from({ length: numLevels }).map((_, idx) => (
+                  {levelNames.map((_, idx) => (
                     <td key={`cell-${row.type}-${idx}`} style={{ padding: '4px 6px', textAlign: 'center', width: 'calc(100%/12)' }}></td>
                   ))}
                 </tr>
               ))}
               {summary.length === 0 && (
-                <tr><td colSpan={3 + numLevels} style={{ padding: 8, color: '#888' }}>No summary data</td></tr>
+                <tr><td colSpan={3 + levelNames.length} style={{ padding: 8, color: '#888' }}>No summary data</td></tr>
               )}
             </tbody>
           </table>
