@@ -105,6 +105,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [elements, setElements] = useState<ElementRec[]>([])
   const [summary, setSummary] = useState<SummaryItem[]>([])
+  const [numLevels, setNumLevels] = useState<number>(0) // number of levels from backend
 
   // ----------------- Splitter handlers -----------------
   useEffect(() => {
@@ -116,7 +117,7 @@ function App() {
       const y = e.clientY - rect.top
       const pct = Math.min(85, Math.max(15, (y / rect.height) * 100))
       setTopHeightPct(pct)
-      // update renderer size for top pane
+      // also update renderer size for top pane
       const container = mountRef.current
       if (container && rendererRef.current && cameraRef.current) {
         const w = container.clientWidth
@@ -181,7 +182,7 @@ function App() {
       animate()
     })
 
-    // Resize
+    // Resize (on window; splitter adjusts explicitly elsewhere)
     const handleResize = () => {
       const w = container.clientWidth
       const h = container.clientHeight
@@ -205,10 +206,11 @@ function App() {
           modelRef.current = null
         }
 
-        const { elements, summary } = await fetchElements()
+        const { elements, summary, num_levels } = await fetchElements()
         setElements(elements || [])
         const summaryData = summary && summary.length > 0 ? summary : computeSummary(elements || [])
         setSummary(summaryData)
+        setNumLevels(num_levels || 0)
 
         if (!elements || elements.length === 0) {
           setError('No elements returned from backend')
@@ -296,17 +298,17 @@ function App() {
   }, [])
 
   // ----------------- Table handlers -----------------
-  const handleColumnHeaderClick = (label: string) => {
-    console.log(`Column header clicked: ${label}`)
-    alert(`Column header clicked: ${label}`)
+  const handleColumnHeaderClick = (columnKey: string) => {
+    // Print something on header click
+    console.log(`Column header clicked: ${columnKey}`)
+    alert(`Column header clicked: ${columnKey}`)
   }
 
-  const handleRowHeaderClick = (type: string) => {
-    console.log(`Row (type) clicked: ${type}`)
-    alert(`Row (type) clicked: ${type}`)
+  const handleRowHeaderClick = (rowKey: string) => {
+    console.log(`Row header clicked: ${rowKey}`)
+    alert(`Row header clicked: ${rowKey}`)
   }
 
-  // ----------------- Render -----------------
   return (
     <div id="app-root" style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column' }}>
       {/* Top status bar */}
@@ -362,12 +364,31 @@ function App() {
                       top: 0,
                       background: '#fafafa',
                       textAlign: 'center',
-                      padding: '6px 8px',
+                      padding: '4px 6px',  // reduced padding
                       borderBottom: '1px solid #ddd',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      width: 'calc(100%/12)' // approx smaller by 1/3
                     }}
                   >
                     {col.label}
+                  </th>
+                ))}
+                {Array.from({ length: numLevels }).map((_, idx) => (
+                  <th
+                    key={`lvl-${idx}`}
+                    onClick={() => handleColumnHeaderClick(`Level ${idx + 1}`)}
+                    style={{
+                      position: 'sticky',
+                      top: 0,
+                      background: '#fafafa',
+                      textAlign: 'center',
+                      padding: '4px 6px', // reduced padding
+                      borderBottom: '1px solid #ddd',
+                      cursor: 'pointer',
+                      width: 'calc(100%/12)'
+                    }}
+                  >
+                    {`Level ${idx + 1}`}
                   </th>
                 ))}
               </tr>
@@ -375,27 +396,30 @@ function App() {
             <tbody>
               {summary.map((row) => (
                 <tr key={row.type} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  {/* Row header = first column (Element type) */}
                   <th
                     scope="row"
                     onClick={() => handleRowHeaderClick(row.type)}
                     style={{
                       background: '#fcfcfc',
-                      padding: '6px 8px',
+                      padding: '4px 6px', // reduced padding
                       borderRight: '1px solid #f5f5f5',
                       cursor: 'pointer',
-                      fontWeight: 600
+                      fontWeight: 600,
+                      width: 'calc(100%/12)'
                     }}
                     title="Click row header"
                   >
                     {row.type}
                   </th>
-                  <td style={{ padding: '6px 8px' }}>{row.unit ?? ''}</td>
-                  <td style={{ padding: '6px 8px' }}>{row.count}</td>
+                  <td style={{ padding: '4px 6px', width: 'calc(100%/12)' }}>{row.unit ?? ''}</td>
+                  <td style={{ padding: '4px 6px', width: 'calc(100%/12)' }}>{row.count}</td>
+                  {Array.from({ length: numLevels }).map((_, idx) => (
+                    <td key={`cell-${row.type}-${idx}`} style={{ padding: '4px 6px', textAlign: 'center', width: 'calc(100%/12)' }}></td>
+                  ))}
                 </tr>
               ))}
               {summary.length === 0 && (
-                <tr><td colSpan={3} style={{ padding: 12, color: '#888' }}>No summary data</td></tr>
+                <tr><td colSpan={3 + numLevels} style={{ padding: 8, color: '#888' }}>No summary data</td></tr>
               )}
             </tbody>
           </table>

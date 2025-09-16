@@ -105,6 +105,10 @@ def get_elements():
         print(data)  # shows in console
         elements.append(data)
 
+    # Count distinct levels
+    levels = model.by_type("IfcBuildingStorey")
+    num_levels = len(levels)
+
     # Build grouped summary
     groups = []
     for elem_type, count in type_summary.items():
@@ -116,7 +120,8 @@ def get_elements():
 
     return {
         "elements": elements,
-        "summary": groups
+        "summary": groups,
+        "num_levels": num_levels
     }
 
 
