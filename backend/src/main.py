@@ -59,9 +59,10 @@ def _get_unit():
     return None
 
 
-# NEW: derive dimensionality from IFC (quantities first, then geometry)
-def _get_element_dimension(element) -> int:
-    # First check for quantity sets
+# NEW: extract dimension and quantity value from quantity sets (no geometry)
+def _get_element_quantity(element):
+    dim = 1
+    value = None
     for definition in getattr(element, "IsDefinedBy", []) or []:
         try:
             rel_def = definition.RelatingDefinition
@@ -70,12 +71,12 @@ def _get_element_dimension(element) -> int:
         if hasattr(rel_def, "is_a") and rel_def.is_a("IfcElementQuantity") and getattr(rel_def, "Quantities", None):
             for q in rel_def.Quantities:
                 try:
-                    if q.is_a("IfcQuantityVolume"):   # m^3
-                        return 3
-                    if q.is_a("IfcQuantityArea"):     # m^2
-                        return 2
-                    if q.is_a("IfcQuantityLength"):   # m^1
-                        return 1
+                    if q.is_a("IfcQuantityVolume"):
+                        return 3, float(q.VolumeValue)
+                    if q.is_a("IfcQuantityArea"):
+                        return 2, float(q.AreaValue)
+                    if q.is_a("IfcQuantityLength"):
+                        return 1, float(q.LengthValue)
                 except Exception:
                     continue
 
@@ -87,12 +88,12 @@ def _get_element_dimension(element) -> int:
     for rep in reps:
         rtype = getattr(rep, "RepresentationType", None)
         if rtype in ["Curve2D", "GeometricCurveSet", "Annotation2D"]:
-            return 2
+            return 2, 1
         if rtype in ["SurfaceModel", "Brep", "AdvancedBrep", "SweptSolid", "CSG", "MappedRepresentation", "Tessellation"]:
-            return 3
+            return 3, 1
 
     # Fallback
-    return 1
+    return 1, 1
 
 
 @app.get("/api/elements")
@@ -104,6 +105,7 @@ def get_elements():
     elements = []
     type_summary = defaultdict(int)
     type_dim = {}  # cache dimension per IFC type (first instance wins)
+    totals = defaultdict(lambda: defaultdict(float))  # totals[type][level] = sum of values
 
     for element in model.by_type("IfcBuildingElement") or []:
         loc = _get_element_location(element)
@@ -119,13 +121,16 @@ def get_elements():
         elem_type = element.is_a()
         type_summary[elem_type] += 1
 
-        # get dimension (cache per type to avoid recomputing)
-        dim = type_dim.get(elem_type)
-        if dim is None:
-            dim = _get_element_dimension(element)
+        # NEW: get dimension + value from quantities
+        dim, value = _get_element_quantity(element)
+        if elem_type not in type_dim:
             type_dim[elem_type] = dim
 
         unit_with_dim = f"{(unit or 'METER').upper()}^{dim}" if unit else None
+
+        # NEW: aggregate totals per type+level if value exists
+        if value is not None and level_name:
+            totals[elem_type][level_name] += value
 
         data = {
             "x": x,
@@ -136,6 +141,7 @@ def get_elements():
             "level_elevation": level_elevation,
             "type": elem_type,
             "unit": unit_with_dim,
+            "value": value,  # keep per-element value for debugging
         }
 
         print(data)  # shows in console
@@ -159,6 +165,7 @@ def get_elements():
             "type": elem_type,
             "unit": unit_with_dim,
             "count": count,
+            "totals": totals[elem_type],  # per-level totals
         })
 
     return {

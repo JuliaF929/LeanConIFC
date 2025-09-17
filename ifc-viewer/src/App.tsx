@@ -14,7 +14,12 @@ type ElementRec = {
   unit: string | null
 }
 
-type SummaryItem = { type: string; unit: string | null; count: number }
+type SummaryItem = { 
+  type: string; 
+  unit: string | null; 
+  count: number; 
+  totals?: Record<string, number>  // <-- NEW: totals per level
+}
 
 type BackendResponse = {
   elements: ElementRec[]
@@ -474,9 +479,18 @@ function App() {
                   </th>
                   <td style={{ padding: '4px 6px', width: 'calc(100%/12)' }}>{row.unit ?? ''}</td>
                   <td style={{ padding: '4px 6px', width: 'calc(100%/12)' }}>{row.count}</td>
-                  {levelNames.map((_, idx) => (
-                    <td key={`cell-${row.type}-${idx}`} style={{ padding: '4px 6px', textAlign: 'center', width: 'calc(100%/12)' }}></td>
-                  ))}
+                  {levelNames.map((lvl, idx) => {
+                    console.log('row.totals?', row.type, row.totals, 'checking level:', lvl)
+                    return (
+                      <td 
+                        key={`cell-${row.type}-${idx}`} 
+                        style={{ padding: '4px 6px', textAlign: 'center', width: 'calc(100%/12)' }}
+                      >
+                        {row.totals && row.totals[lvl] ? row.totals[lvl].toFixed(2) : ''}
+                      </td>
+                    )
+                  })}
+
                 </tr>
               ))}
               {summary.length === 0 && (
