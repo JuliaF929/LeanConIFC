@@ -330,6 +330,18 @@ function App() {
     })
   }
 
+  const highlightType = (type: string) => {
+    meshesRef.current.forEach(mesh => {
+      const mat = mesh.material as THREE.MeshLambertMaterial
+      const baseColor = mesh.userData.baseColor as THREE.Color
+      if (mesh.userData.type === type) {
+        mat.color = new THREE.Color(0x0000ff) // highlight blue
+      } else {
+        mat.color = baseColor.clone()
+      }
+    })
+  }
+
   // ----------------- Table handlers -----------------
   const handleColumnHeaderClick = (columnKey: string) => {
     // If header is a level name -> highlight all elements of that level
@@ -342,8 +354,7 @@ function App() {
   }
 
   const handleRowHeaderClick = (rowKey: string) => {
-    console.log(`Row header clicked: ${rowKey}`)
-    alert(`Row header clicked: ${rowKey}`)
+    highlightType(rowKey)
   }
 
   // Compose table data (keep it simple for now)
