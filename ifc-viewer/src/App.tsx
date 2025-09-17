@@ -100,6 +100,9 @@ function App() {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const modelRef = useRef<THREE.Object3D | null>(null)
 
+  // ----------------- NEW: meshes reference -----------------
+  const meshesRef = useRef<THREE.Mesh[]>([])
+
   // Data/UI
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -240,6 +243,8 @@ function App() {
         root.name = 'IFC_from_backend'
         const levelGroups = new Map<string, THREE.Group>()
 
+        meshesRef.current = [] // reset meshes list
+
         const ensureLevelGroup = (name: string | null, elevation: number) => {
           const key = name ?? '(no level)'
           if (levelGroups.has(key)) return levelGroups.get(key)!
@@ -272,9 +277,10 @@ function App() {
             type: el.type,
             level: el.level_name,
             unit: el.unit,
-            worldY: el.real_world_z != null ? el.real_world_z * scale : undefined
+            baseColor: (mat as THREE.MeshLambertMaterial).color.clone() // store original color
           }
           g.add(mesh)
+          meshesRef.current.push(mesh) // keep reference
         }
 
         // Add to scene
@@ -311,11 +317,28 @@ function App() {
     }
   }, [])
 
+  // ----------------- NEW: highlight function -----------------
+  const highlightLevel = (level: string) => {
+    meshesRef.current.forEach(mesh => {
+      const mat = mesh.material as THREE.MeshLambertMaterial
+      const baseColor = mesh.userData.baseColor as THREE.Color
+      if (mesh.userData.level === level) {
+        mat.color = new THREE.Color(0xff0000) // highlight red
+      } else {
+        mat.color = baseColor.clone()
+      }
+    })
+  }
+
   // ----------------- Table handlers -----------------
   const handleColumnHeaderClick = (columnKey: string) => {
-    // Print something on header click
-    console.log(`Column header clicked: ${columnKey}`)
-    alert(`Column header clicked: ${columnKey}`)
+    // If header is a level name -> highlight all elements of that level
+    if (levelNames.includes(columnKey)) {
+      highlightLevel(columnKey)
+    } else {
+      console.log(`Column header clicked: ${columnKey}`)
+      alert(`Column header clicked: ${columnKey}`)
+    }
   }
 
   const handleRowHeaderClick = (rowKey: string) => {
